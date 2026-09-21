@@ -1,0 +1,61 @@
+# PAAS_ensemble_v4_inf -- INFERENCE ONLY. Pinned to the validated stack.
+#
+# Runs on the same single venv as the training project:
+#   /datasets/work/vLLM/temp/PAAS_qwen3vl/venv/bin/python   (Python 3.12.12, CUDA 13.0)
+# That venv is SELF-CONTAINED (pyvenv.cfg include-system-site-packages=false + PYTHONNOUSERSITE=1);
+# paas/env.py aborts if a non-venv site-packages appears on sys.path, because ~/.local still holds a
+# complete legacy stack (transformers 4.37.2, peft 0.7.1) that would silently replace the tf5 one.
+#
+# DROPPED vs the training project (not importable from any inference entry point -- verified by a
+# static import closure over inference.py, test_video_image_batch.py, scripts/run_dataset.py and
+# app_fastapi_json_v5_safe_jsonfmt.py):
+#   deepspeed, peft, accelerate, flash-attn, flash-linear-attention, albumentations, fpdf2, pypdf
+#   - deepspeed/accelerate  : MIDS-4c + Qwen trainers only
+#   - peft / flash-attn     : LoRA training only; the served MLLM is already MERGED
+#   - flash-linear-attention: Qwen3.5 training fast path; vLLM has its own kernels
+#   - albumentations        : training augmentation only (inference uses paas/preprocess.py)
+#
+# INSTALL ORDER MATTERS -- and three groups cannot be installed by plain resolution:
+#   pip install torch==2.11.0 torchvision==0.26.0 torchaudio==2.11.0 \
+#       --index-url https://download.pytorch.org/whl/cu130
+#   pip install --no-deps opencv-python-headless==4.13.0.92     # DECLARES numpy>=2; we run 1.26.4
+#   pip install -c <constraints: numpy==1.26.4, ml-dtypes==0.5.4> -r requirements.txt
+#   pip install --no-deps vllm==0.21.0 mistral_common==1.11.2 ...   # closure is unresolvable
+# See the training project's requirements.txt for the full explanation of each --no-deps case.
+
+# ---------------------------------------------------------------- core
+torch==2.11.0                  # +cu130 build from the pytorch index above
+torchvision==0.26.0            # GSD / SeLop transforms
+torchaudio==2.11.0             # not imported by us; vllm==0.21.0 HARD-REQUIRES it
+transformers==5.13.1           # >=5 REQUIRED: tf5 CLIPVisionModel layout (see paas/compat/)
+vllm==0.21.0                   # in-process Qwen3.5-4B (no HTTP server)
+safetensors==0.8.0
+tokenizers==0.22.2
+huggingface-hub==1.23.0
+sentencepiece==0.2.1           # T5Tokenizer(use_fast=False) -- MIDS text tower
+protobuf==6.33.5               # slow-tokenizer conversion path
+
+# ---------------------------------------------------------------- data / vision / metrics
+numpy==1.26.4                  # KEEP <2
+opencv-python-headless==4.13.0.92
+pillow==12.1.1
+scikit-learn==1.8.0            # AUC/AP in scripts/run_dataset.py
+scipy==1.17.0
+PyYAML==6.0.3
+tqdm==4.67.3
+
+# ---------------------------------------------------------------- ONNX (YOLO11 rotation detector)
+onnxruntime==1.26.0            # ffaa/yolo11_cls_onnx.py -- runs on EVERY request
+onnx==1.21.0
+
+# ---------------------------------------------------------------- serving
+fastapi==0.129.0
+uvicorn==0.47.0
+pydantic==2.13.4
+starlette==0.52.1
+python-multipart==0.0.28       # REQUIRED for the UploadFile endpoints
+Werkzeug==3.1.5                # secure_filename on uploads
+
+# ---------------------------------------------------------------- optional
+# scripts/run_dataset.py --filter-real only; degrades gracefully when absent.
+# insightface==0.7.3
